@@ -257,6 +257,13 @@ function LightweightChartsComponent({
       0
     )
 
+    // POC fix: explicitly sync the Streamlit iframe to the known-correct total
+    // height as soon as it is computed, rather than relying solely on the
+    // generic withStreamlitConnection post-render scrollHeight sample (which
+    // can run before this pane's layout has settled) or on a later
+    // ResizeObserver firing.
+    Streamlit.setFrameHeight(totalHeight)
+
     const containerWidth = chartContainerRef.current.clientWidth
 
     // Initialize the main chart container with base configuration
@@ -626,6 +633,12 @@ function LightweightChartsComponent({
 
             // Perform resize
             chartRef.current.resize(newWidth, totalHeight)
+
+            // POC fix: re-sync the iframe height alongside the chart's own
+            // resize call. Streamlit.setFrameHeight() de-dupes against its
+            // own last-sent value internally, so this is a no-op if nothing
+            // actually changed since the call above in the main effect.
+            Streamlit.setFrameHeight(totalHeight)
 
             // Apply heights after a short delay
             setTimeout(() => {
