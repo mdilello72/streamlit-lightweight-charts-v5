@@ -145,5 +145,7 @@ my_component/frontend/node_modules/.bin/
 node_modules
 test_venv/
 
-# compiled frontend (built by CI / npm run build)
-lightweight_charts_v5/frontend/build/
+# TOE fork note: compiled frontend is normally excluded (built by CI / npm
+# run build upstream) but is deliberately committed on this branch so that
+# `pip install` needs no Node.js/npm at install time.
+# lightweight_charts_v5/frontend/build/
