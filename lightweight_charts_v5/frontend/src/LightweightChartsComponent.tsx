@@ -197,6 +197,15 @@ function LightweightChartsComponent({
   } = args
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  // Increment 3I, Stage 1 (TOE): captured horizontal visible range, retained
+  // across this component instance's chart-recreation cycles (indicator
+  // toggles) so the user's pan/zoom survives them. A fresh component
+  // instance (symbol/timeframe change, full reload) starts with this ref at
+  // its initial null, so the existing zoom_level/fitContent default applies
+  // unchanged in that case.
+  const savedVisibleRangeRef = useRef<ReturnType<
+    ReturnType<IChartApi["timeScale"]>["getVisibleRange"]
+  > | null>(null)
   const [hasSetInitialValue, setHasSetInitialValue] = useState(false)
   const [themeApplied, setThemeApplied] = useState(false)
   const resizeTimeoutRef = useRef<number | null>(null)
@@ -586,13 +595,34 @@ function LightweightChartsComponent({
           if (last > latestTime) latestTime = last
         }
       }
-      if (mainSeriesData?.length >= zoom_level) {
-        chartRef.current.timeScale().setVisibleRange({
-          from: mainSeriesData[mainSeriesData.length - zoom_level].time,
-          to: latestTime,
-        })
-      } else {
-        chartRef.current.timeScale().fitContent()
+      // Increment 3I, Stage 1 (TOE): restore a previously captured visible
+      // range (set by this same effect's cleanup, below) when one is
+      // available, instead of always falling back to the zoom_level/
+      // fitContent default. A new component instance (symbol/timeframe
+      // change, full page reload) never has a captured range at this point,
+      // so the existing default behavior is unchanged for that case.
+      const savedRange = savedVisibleRangeRef.current
+      let restoredSavedRange = false
+      if (savedRange && savedRange.from != null && savedRange.to != null) {
+        try {
+          chartRef.current.timeScale().setVisibleRange(savedRange)
+          restoredSavedRange = true
+        } catch (e) {
+          console.warn(
+            "Could not restore saved visible range, falling back to default view",
+            e
+          )
+        }
+      }
+      if (!restoredSavedRange) {
+        if (mainSeriesData?.length >= zoom_level) {
+          chartRef.current.timeScale().setVisibleRange({
+            from: mainSeriesData[mainSeriesData.length - zoom_level].time,
+            to: latestTime,
+          })
+        } else {
+          chartRef.current.timeScale().fitContent()
+        }
       }
 
       // Mark chart as initialized
@@ -758,6 +788,20 @@ function LightweightChartsComponent({
       resizeObserver.disconnect()
 
       window.removeEventListener("resize", handleResize)
+
+      // Increment 3I, Stage 1 (TOE): capture the current horizontal visible
+      // range before this chart object is torn down, so the next effect run
+      // (triggered by an indicator toggle on this same component instance)
+      // can restore it instead of resetting to the default view. Guarded
+      // against getVisibleRange() returning null (no range established yet)
+      // and against the call throwing during teardown.
+      try {
+        savedVisibleRangeRef.current = chart.timeScale().getVisibleRange()
+      } catch (e) {
+        console.warn("Could not capture visible range before chart removal", e)
+        savedVisibleRangeRef.current = null
+      }
+
       chart.remove()
       setThemeApplied(false)
     }
